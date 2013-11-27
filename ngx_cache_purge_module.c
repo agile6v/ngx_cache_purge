@@ -948,7 +948,7 @@ ngx_http_file_cache_purge(ngx_http_request_t *r)
 #  endif
         break;
     case NGX_DECLINED:
-        return NGX_DECLINED;
+        break;
 #  if (NGX_HAVE_FILE_AIO)
     case NGX_AGAIN:
         return NGX_AGAIN;
@@ -960,14 +960,12 @@ ngx_http_file_cache_purge(ngx_http_request_t *r)
     c = r->cache;
     cache = c->file_cache;
 
-    /*
-     * delete file from disk but *keep* in-memory node,
-     * because other requests might still point to it.
-     */
-
     ngx_shmtx_lock(&cache->shpool->mutex);
 
     if (!c->node->exists) {
+        if (c->node->uses == 1) {
+            c->min_uses = 1;
+        }
         /* race between concurrent purges, backoff */
         ngx_shmtx_unlock(&cache->shpool->mutex);
         return NGX_DECLINED;
@@ -995,6 +993,8 @@ ngx_http_file_cache_purge(ngx_http_request_t *r)
         ngx_log_error(NGX_LOG_CRIT, r->connection->log, ngx_errno,
                       ngx_delete_file_n " \"%s\" failed", c->file.name.data);
     }
+    
+    c->min_uses = 1;
 
     /* file deleted from cache */
     return NGX_OK;
